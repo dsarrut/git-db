@@ -11,8 +11,9 @@ if [ $# -eq 0 ]; then
 fi
 
 OPTS_SPEC="\
-git db pull
-git db commit
+git db pull          : pull and build the db (update to last version)
+git db commit        : commit a new db version
+git db set <mydb.db> : set the current db for next pull/commit
 --
 h,help        show the help
 d             show debug messages
@@ -53,6 +54,7 @@ command="$1"
 shift
 
 dir="$(dirname "$prefix/.")"
+config_file="git-db-name.txt"
 
 debug "command: {$command}"
 debug "quiet: {$quiet}"
@@ -63,7 +65,6 @@ debug "dir: {$dir}"
 # --------------------------------------------------------------
 set_db_data()
 {
-    config_file="git-db-name.txt"
     if [ ! -f $config_file ]
     then
         die "Please provide a 'git-db-name.txt' file that contains the name of the database you want to track in git."
@@ -80,7 +81,6 @@ set_db_data()
     db_schema=${db_core_name}.schema
     db_temp=.${db_core_name}.temp
     db_log=.${db_core_name}.log
-    echo $db_name
 }
 # --------------------------------------------------------------
 
@@ -88,7 +88,8 @@ set_db_data()
 # --------------------------------------------------------------
 cmd_pull()
 {
-    debug "start cmd pull"
+    debug "Start command pull"
+    set_db_data
     git pull
     build_database
 }
@@ -96,8 +97,38 @@ cmd_pull()
 
 
 # --------------------------------------------------------------
+cmd_set()
+{
+    debug "Start command set $@"
+    if [ -f $config_file ]
+    then
+        mv $config_file ${config_file}.backup
+    fi
+    f=$@
+    filename=$(basename "$f")
+    extension="${f##*.}"
+    file="${f%.*}"
+    # create the db name
+    echo $file > $config_file
+    set_db_data
+    # insert files in git
+    echo "Committing the schema/sql of the '$file'"
+    git add $config_file
+    git commit $config_file -m "Updating database name '$file'"
+    dump_database
+    git add $db_schema $db_sql
+    git commit $db_sql $db_schema -m "Update database schema and sql of '$file'"
+    echo $f >> .gitignore
+}
+# --------------------------------------------------------------
+
+
+# --------------------------------------------------------------
 cmd_commit()
 {
+    debug "Start command commit"
+    set_db_data
+
     if [ $# -ne 1 ]; then
 	die "You must provide <commit message>"
     fi
@@ -116,7 +147,6 @@ cmd_commit()
 dump_database()
 {
     echo "Converting database into  sql commands"
-    #sqlite3 $db_name < $db_tables_dump > $db_sql
     sqlite3 $db_name .sch > $db_schema
     sqlite3 $db_name .dump > $db_temp
     grep -v -f $db_schema $db_temp > $db_sql
@@ -142,9 +172,6 @@ build_database()
 
 
 # --------------------------------------------------------------
-# set the db name
-set_db_data
-
 # Execute the command
 "cmd_$command" "$@"
 # --------------------------------------------------------------
