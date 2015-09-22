@@ -23,7 +23,8 @@ eval "$(echo "$OPTS_SPEC" | git rev-parse --parseopt -- "$@" || echo exit $?)"
 PATH=$PATH:$(git --exec-path)
 . git-sh-setup
 
-require_work_tree
+# check that we are at top-level dir
+cd_to_toplevel
 
 debug=
 
@@ -54,7 +55,18 @@ command="$1"
 shift
 
 dir="$(dirname "$prefix/.")"
-config_file="git-db-name.txt"
+db_config_folder=".git-db"
+config_file=$db_config_folder/"git-db-name.txt"
+
+### create the config folder if does not exist
+if [ ! -d $db_config_folder ]
+then
+    mkdir $db_config_folder
+    git add $db_config_folder
+    git commit $db_config_folder -m "Create config folder"
+    echo "Commit new db config folder named '$db_config_folder'"
+    echo $db_config_folder >> .gitignore
+fi
 
 debug "command: {$command}"
 debug "quiet: {$quiet}"
@@ -75,12 +87,12 @@ set_db_data()
         die "Error, file 'git-db-name.txt' is empty. Please insert the name of the database you want to track in git."
     fi
 
-    db_core_name=$(cat "git-db-name.txt")
+    db_core_name=$(cat $config_file)
     db_name=${db_core_name}.db
-    db_sql=${db_core_name}.sql
-    db_schema=${db_core_name}.schema
-    db_temp=.${db_core_name}.temp
-    db_log=.${db_core_name}.log
+    db_sql=${db_config_folder}/${db_core_name}.sql
+    db_schema=${db_config_folder}/${db_core_name}.schema
+    db_temp=${db_config_folder}/${db_core_name}.temp
+    db_log=${db_config_folder}/${db_core_name}.log
 }
 # --------------------------------------------------------------
 
