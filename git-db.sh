@@ -13,7 +13,6 @@ fi
 OPTS_SPEC="\
 git db pull
 git db commit
-git db push
 --
 h,help        show the help
 d             show debug messages
@@ -26,10 +25,6 @@ PATH=$PATH:$(git --exec-path)
 require_work_tree
 
 debug=
-
-db_name=mydb.db
-db_sql=mydb.sql
-db_tables_dump=dump_for_git.txt
 
 # --------------------------------------------------------------
 debug()
@@ -64,6 +59,32 @@ debug "quiet: {$quiet}"
 debug "dir: {$dir}"
 # --------------------------------------------------------------
 
+
+# --------------------------------------------------------------
+set_db_data()
+{
+    config_file="git-db-name.txt"
+    if [ ! -f $config_file ]
+    then
+        die "Please provide a 'git-db-name.txt' file that contains the name of the database you want to track in git."
+    fi
+
+    if [ ! -s $config_file ]
+    then
+        die "Error, file 'git-db-name.txt' is empty. Please insert the name of the database you want to track in git."
+    fi
+
+    db_core_name=$(cat "git-db-name.txt")
+    db_name=${db_core_name}.db
+    db_sql=${db_core_name}.sql
+    db_schema=${db_core_name}.schema
+    db_temp=.${db_core_name}.temp
+    db_log=.${db_core_name}.log
+    echo $db_name
+}
+# --------------------------------------------------------------
+
+
 # --------------------------------------------------------------
 cmd_pull()
 {
@@ -72,6 +93,7 @@ cmd_pull()
     build_database
 }
 # --------------------------------------------------------------
+
 
 # --------------------------------------------------------------
 cmd_commit()
@@ -85,32 +107,44 @@ cmd_commit()
     dump_database
 
     # commit the created files
-    git commit $db_sql -m "$1"
+    git commit $db_sql $db_schema -m "$1"
 }
 # --------------------------------------------------------------
+
 
 # --------------------------------------------------------------
 dump_database()
 {
-    echo "dump db"
-    sqlite3 $db_name < $db_tables_dump > $db_sql
+    echo "Converting database into  sql commands"
+    #sqlite3 $db_name < $db_tables_dump > $db_sql
+    sqlite3 $db_name .sch > $db_schema
+    sqlite3 $db_name .dump > $db_temp
+    grep -v -f $db_schema $db_temp > $db_sql
+    rm $db_temp
 }
 # --------------------------------------------------------------
+
 
 # --------------------------------------------------------------
 build_database()
 {
-    echo "Building the database from sql commands"
+    echo "Backup previous db"
     if [ -e $db_name ]
     then
         mv $db_name $db_name.backup
     fi
-    sqlite3 -init $db_sql $db_name .exit 2> sqlite.log
+    echo "Building the database schema"
+    sqlite3 -init $db_schema $db_name .exit 2> $db_log
+    echo "Insert the data"
+    sqlite3 -init $db_sql $db_name .exit 2>> $db_log
 }
 # --------------------------------------------------------------
 
 
 # --------------------------------------------------------------
+# set the db name
+set_db_data
+
 # Execute the command
 "cmd_$command" "$@"
 # --------------------------------------------------------------
