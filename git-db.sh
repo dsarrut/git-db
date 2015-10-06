@@ -14,6 +14,7 @@ OPTS_SPEC="\
 git db pull          : pull and build the db (update to last version)
 git db commit        : commit a new db version
 git db set <mydb.db> : set the current db for next pull/commit
+git db checkout      : force pull and build the db (erase the current modification)
 --
 h,help        show the help
 d             show debug messages
@@ -75,7 +76,7 @@ debug "dir: {$dir}"
 
 
 # --------------------------------------------------------------
-set_db_data()
+initialize_db_names()
 {
     if [ ! -f $config_file ]
     then
@@ -101,8 +102,29 @@ set_db_data()
 cmd_pull()
 {
     debug "Start command pull"
-    set_db_data
-    git pull
+    initialize_db_names
+
+    ## check if the current db has been modified
+    echo "Before pull, check if the current db has been locally modified"
+    dump_database
+    r=`git status -s ${db_sql}`
+    if [[ ${r:1:2} == "M" ]]
+    then
+        echo  "Error: the current db has been locally modified, I cannot pull."
+    else
+        echo "No, the db has not been modified, I can pull"
+        build_database
+    fi
+}
+# --------------------------------------------------------------
+
+
+# --------------------------------------------------------------
+cmd_checkout()
+{
+    debug "Start command checkout"
+    initialize_db_names
+    git checkout ${db_sql} ${db_schema}
     build_database
 }
 # --------------------------------------------------------------
@@ -122,7 +144,7 @@ cmd_set()
     file="${f%.*}"
     # create the db name
     echo $file > $config_file
-    set_db_data
+    initialize_db_names
     # insert files in git
     echo "Committing the schema/sql of the '$file'"
     git add $config_file
@@ -139,7 +161,7 @@ cmd_set()
 cmd_commit()
 {
     debug "Start command commit"
-    set_db_data
+    initialize_db_names
 
     if [ $# -ne 1 ]; then
 	die "You must provide <commit message>"
@@ -158,7 +180,7 @@ cmd_commit()
 # --------------------------------------------------------------
 dump_database()
 {
-    echo "Converting database into  sql commands"
+    #echo "Converting database into sql commands"
     sqlite3 $db_name .sch > $db_schema
     sqlite3 $db_name .dump > $db_temp
     grep -v -f $db_schema $db_temp > $db_sql
@@ -170,15 +192,18 @@ dump_database()
 # --------------------------------------------------------------
 build_database()
 {
-    echo "Backup previous db"
+    echo "(Backup the previous db as $db_name.backup)"
     if [ -e $db_name ]
     then
         mv $db_name $db_name.backup
     fi
     echo "Building the database schema"
-    sqlite3 -init $db_schema $db_name .exit 2> $db_log
+    sqlite3 -init $db_schema $db_name .exit 2> $db_log | xargs echo -n
     echo "Insert the data"
-    sqlite3 -init $db_sql $db_name .exit 2>> $db_log
+    sqlite3 -init $db_sql $db_name .exit 2>> $db_log | xargs echo -n
+
+    # (the  | xargs echo -n remove the line break)
+    # as explain in http://stackoverflow.com/questions/12524308/bash-strip-trailing-linebreak-from-output
 }
 # --------------------------------------------------------------
 
