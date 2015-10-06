@@ -113,6 +113,7 @@ cmd_pull()
         echo  "Error: the current db has been locally modified, I cannot pull."
     else
         echo "No, the db has not been modified, I can pull"
+        git pull
         build_database
     fi
 }
